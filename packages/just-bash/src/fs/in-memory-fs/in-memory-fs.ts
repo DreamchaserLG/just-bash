@@ -857,6 +857,27 @@ export class InMemoryFs implements IFileSystem {
     }
   }
 
+  /** rename(2) requires the destination's parent directory to exist. */
+  private async assertMvDestParent(
+    src: string,
+    dest: string,
+    destNorm: string,
+  ): Promise<void> {
+    const parent = dirname(destNorm);
+    if (parent === "/") return;
+    let parentStat: FsStat;
+    try {
+      parentStat = await this.stat(parent);
+    } catch {
+      throw new Error(
+        `ENOENT: no such file or directory, mv '${src}' -> '${dest}'`,
+      );
+    }
+    if (!parentStat.isDirectory) {
+      throw new Error(`ENOTDIR: not a directory, mv '${src}' -> '${dest}'`);
+    }
+  }
+
   async mv(src: string, dest: string): Promise<void> {
     validatePath(src, "mv");
     validatePath(dest, "mv");
@@ -874,6 +895,7 @@ export class InMemoryFs implements IFileSystem {
     ) {
       throw new Error(`EINVAL: cannot move '${src}' into itself, '${dest}'`);
     }
+    await this.assertMvDestParent(src, dest, destNorm);
 
     if (source.type === "directory") {
       await this.mkdir(destNorm, { recursive: true });
@@ -885,7 +907,6 @@ export class InMemoryFs implements IFileSystem {
       return;
     }
 
-    this.ensureParentDirs(destNorm);
     // Reuse the same body while the old path still retains it. The accounting
     // helper therefore sees an existing reference and a rename never needs
     // temporary capacity equal to the file size.

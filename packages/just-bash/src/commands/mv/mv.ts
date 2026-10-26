@@ -1,4 +1,4 @@
-import { isSameOrDescendantPath } from "../../fs/path-utils.js";
+import { dirname, isSameOrDescendantPath } from "../../fs/path-utils.js";
 import {
   compareCanonicalContainment,
   compareFileIdentity,
@@ -113,6 +113,21 @@ export const mvCommand: RuntimeCommand = {
           const basename = src.split("/").pop() || src;
           targetPath =
             destPath === "/" ? `/${basename}` : `${destPath}/${basename}`;
+        }
+        // rename(2) resolves against the destination's parent directory, so
+        // like real bash the move fails when that parent does not exist.
+        const targetParent = dirname(targetPath);
+        try {
+          const parentStat = await ctx.fs.stat(targetParent);
+          if (!parentStat.isDirectory) {
+            stderr += `mv: cannot stat '${dest}': Not a directory\n`;
+            exitCode = 1;
+            continue;
+          }
+        } catch {
+          stderr += `mv: cannot move '${src}' to '${dest}': No such file or directory\n`;
+          exitCode = 1;
+          continue;
         }
         if (srcStat.isDirectory) {
           const containment = await compareCanonicalContainment(
