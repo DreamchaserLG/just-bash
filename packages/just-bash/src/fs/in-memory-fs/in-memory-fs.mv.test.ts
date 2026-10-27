@@ -39,3 +39,15 @@ describe("InMemoryFs mv destination parent", () => {
     await expect(fs.stat("/srcdir")).rejects.toThrow();
   });
 });
+
+it("keeps a file reachable after moving it through a symlinked parent", async () => {
+  const fs = new InMemoryFs({
+    "/real/.keep": "",
+    "/f.txt": "content",
+  });
+  await fs.symlink("/real", "/link");
+  await fs.mv("/f.txt", "/link/f.txt");
+  // Reads resolve through /link, so the content must live at /real/f.txt.
+  await expect(fs.readFile("/link/f.txt")).resolves.toBe("content");
+  await expect(fs.readFile("/real/f.txt")).resolves.toBe("content");
+});

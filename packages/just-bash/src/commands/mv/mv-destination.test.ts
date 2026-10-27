@@ -80,3 +80,29 @@ describe("mv destination parent", () => {
     expect(await env.readFile("/dir/new.txt")).toBe("content");
   });
 });
+
+it("should report an intermediate file as Not a directory, not a missing one", async () => {
+  const env = new Bash({
+    files: {
+      "/f.txt": "content",
+      "/blocker": "not a dir",
+    },
+  });
+  const result = await env.exec("mv /f.txt /blocker/child/dest.txt");
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toBe(
+    "mv: cannot move '/f.txt' to '/blocker/child/dest.txt': Not a directory\n",
+  );
+  expect(await env.readFile("/f.txt")).toBe("content");
+});
+
+it("should report a symlink loop as too many levels, not a missing directory", async () => {
+  const env = new Bash({
+    files: { "/f.txt": "content", "/loop/.keep": "" },
+  });
+  await env.exec("ln -s /loop/back /loop/back");
+  const result = await env.exec("mv /f.txt /loop/back/f.txt");
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("Too many levels of symbolic links");
+  expect(await env.readFile("/f.txt")).toBe("content");
+});

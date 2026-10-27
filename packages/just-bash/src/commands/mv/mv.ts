@@ -9,7 +9,10 @@ import {
   ExecutionAbortedError,
   ExecutionLimitError,
 } from "../../interpreter/errors.js";
-import { getErrorMessage } from "../../interpreter/helpers/errors.js";
+import {
+  getErrorCode,
+  getErrorMessage,
+} from "../../interpreter/helpers/errors.js";
 import type {
   ExecResult,
   RuntimeCommand,
@@ -35,6 +38,26 @@ const argDefs = {
   noClobber: { short: "n", long: "no-clobber", type: "boolean" as const },
   verbose: { short: "v", long: "verbose", type: "boolean" as const },
 };
+
+/**
+ * What Unix mv reports for a destination-parent lookup that failed.
+ *
+ * Only ENOENT means "the parent is missing"; the other errnos name a different
+ * reason that callers would otherwise be told to look for a missing directory.
+ */
+function mvParentFailureReason(error: unknown): string {
+  switch (getErrorCode(error)) {
+    case "ENOTDIR":
+      return "Not a directory";
+    case "ELOOP":
+      return "Too many levels of symbolic links";
+    case "EACCES":
+    case "EPERM":
+      return "Permission denied";
+    default:
+      return "No such file or directory";
+  }
+}
 
 export const mvCommand: RuntimeCommand = {
   name: "mv",
@@ -124,8 +147,12 @@ export const mvCommand: RuntimeCommand = {
             exitCode = 1;
             continue;
           }
-        } catch {
-          stderr += `mv: cannot move '${src}' to '${dest}': No such file or directory\n`;
+        } catch (e) {
+          // A lookup can fail for reasons other than a missing component — a
+          // file standing in the path, a symlink loop, an unsearchable parent.
+          // Unix mv prints the reason strerror(3) gives; folding every case
+          // into ENOENT reports a missing directory for what is none.
+          stderr += `mv: cannot move '${src}' to '${dest}': ${mvParentFailureReason(e)}\n`;
           exitCode = 1;
           continue;
         }
